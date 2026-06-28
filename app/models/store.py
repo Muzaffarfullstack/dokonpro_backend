@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Index, String, Text
+from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,7 +20,10 @@ if TYPE_CHECKING:
 
 class Store(BaseEntity, ActiveMixin):
     __tablename__ = "stores"
-    __table_args__ = (Index("ix_stores_owner_active", "owner_id", "is_active"),)
+    __table_args__ = (
+        UniqueConstraint("owner_id", "slug", name="uq_stores_owner_slug"),
+        Index("ix_stores_owner_active", "owner_id", "is_active"),
+    )
 
     owner_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

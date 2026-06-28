@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -82,6 +92,7 @@ class StoreProduct(StoreScopedEntity, ActiveMixin):
         default=Decimal("0"),
         nullable=False,
     )
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     store: Mapped[Store] = relationship("Store", back_populates="store_products")
     product: Mapped[Product] = relationship("Product", back_populates="store_products")

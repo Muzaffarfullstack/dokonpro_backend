@@ -229,6 +229,7 @@ async def refresh(
 @router.post(
     "/select-store",
     response_model=ApiResponse[AuthResponse],
+    dependencies=[rate_limit(key_prefix="auth_select_store", limit=30, window_seconds=60)],
 )
 async def select_store(
     payload: SelectStoreRequest,
