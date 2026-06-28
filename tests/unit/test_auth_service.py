@@ -226,10 +226,14 @@ async def test_register_creates_user_store_and_seven_day_trial() -> None:
     assert timedelta(days=TRIAL_DAYS - 1) < trial_delta <= timedelta(days=TRIAL_DAYS)
 
     token_payload = decode_token(session.access_token)
+    refresh_payload = decode_token(session.refresh_token)
     assert token_payload is not None
     assert token_payload["sub"] == str(session.response.user.id)
     assert token_payload["store_id"] == str(session.response.active_store.id)
     assert token_payload["csrf"] == session.response.csrf_token
+    assert refresh_payload is not None
+    assert refresh_payload["type"] == "refresh"
+    assert refresh_payload["sub"] == str(session.response.user.id)
 
 
 @pytest.mark.asyncio
@@ -283,6 +287,7 @@ async def test_login_multiple_stores_requires_store_selection() -> None:
     assert session.response.active_store is None
     assert len(session.response.stores) == 2
     assert "store_id" not in decode_token(session.access_token)
+    assert decode_token(session.refresh_token)["type"] == "refresh"
 
 
 @pytest.mark.asyncio
@@ -347,6 +352,37 @@ async def test_select_store_issues_token_with_selected_store() -> None:
     assert session.response.active_store is not None
     assert session.response.active_store.id == selected_store.id
     assert decode_token(session.access_token)["store_id"] == str(selected_store.id)
+    assert decode_token(session.refresh_token)["store_id"] == str(selected_store.id)
+
+
+@pytest.mark.asyncio
+async def test_refresh_rotates_session_with_selected_store(monkeypatch) -> None:
+    async def fake_blacklist_token(_: str) -> None:
+        return None
+
+    async def fake_is_token_blacklisted(_: str | None) -> bool:
+        return False
+
+    from app.modules.auth import service as auth_service
+
+    monkeypatch.setattr(auth_service, "blacklist_token", fake_blacklist_token)
+    monkeypatch.setattr(auth_service, "is_token_blacklisted", fake_is_token_blacklisted)
+
+    user = make_user()
+    selected_store = make_store()
+    FakeAuthRepository.user = user
+    FakeAuthRepository.stores = [selected_store]
+
+    initial_session = AuthService(FakeDb())._build_session(
+        user=user,
+        stores=[selected_store],
+        active_store_id=selected_store.id,
+    )
+    refreshed_session = await AuthService(FakeDb()).refresh(initial_session.refresh_token)
+
+    assert refreshed_session.response.active_store is not None
+    assert refreshed_session.response.active_store.id == selected_store.id
+    assert refreshed_session.refresh_token != initial_session.refresh_token
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi.testclient import TestClient
 
 from app.core.enums import SubscriptionStatus, UserRole
-from app.core.security import ACCESS_TOKEN_COOKIE, CSRF_TOKEN_COOKIE
+from app.core.security import ACCESS_TOKEN_COOKIE, CSRF_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE
 from app.main import app
 from app.modules.auth.schemas import AuthResponse, AuthStoreResponse, UserResponse
 from app.modules.auth.service import AuthSession
@@ -20,6 +20,7 @@ class FakeAuthService:
         csrf_token = "csrf-test-token"
         return AuthSession(
             access_token="access-test-token",
+            refresh_token="refresh-test-token",
             response=AuthResponse(
                 user=UserResponse(
                     id=user_id,
@@ -71,6 +72,7 @@ def test_register_sets_httponly_access_cookie_and_csrf_cookie(monkeypatch) -> No
     assert response.status_code == 200
     set_cookie = response.headers.get("set-cookie", "")
     assert f"{ACCESS_TOKEN_COOKIE}=access-test-token" in set_cookie
+    assert f"{REFRESH_TOKEN_COOKIE}=refresh-test-token" in set_cookie
     assert "HttpOnly" in set_cookie
     assert f"{CSRF_TOKEN_COOKIE}=csrf-test-token" in set_cookie
     assert (

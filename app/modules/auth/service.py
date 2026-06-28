@@ -10,9 +10,13 @@ from app.core.constants import TRIAL_DAYS
 from app.core.enums import OtpPurpose, UserRole
 from app.core.exceptions import AppException
 from app.core.security import (
+    blacklist_token,
     create_access_token,
+    create_refresh_token,
+    decode_token,
     generate_csrf_token,
     hash_password,
+    is_token_blacklisted,
     verify_password,
 )
 from app.models import Store, User
@@ -36,6 +40,7 @@ from app.utils.subscription import subscription_allows_write, subscription_statu
 class AuthSession:
     response: AuthResponse
     access_token: str
+    refresh_token: str
 
 
 class AuthService:
@@ -133,6 +138,41 @@ class AuthService:
         active_store_id = stores[0].id if len(stores) == 1 else None
         return self._build_session(user=user, stores=stores, active_store_id=active_store_id)
 
+    async def refresh(self, refresh_token: str | None) -> AuthSession:
+        payload = decode_token(refresh_token or "")
+        if (
+            payload is None
+            or payload.get("type") != "refresh"
+            or not payload.get("sub")
+            or await is_token_blacklisted(str(payload.get("jti") or ""))
+        ):
+            raise AppException(code="INVALID_TOKEN", message="Token noto'g'ri.", status_code=401)
+
+        try:
+            user_id = uuid.UUID(str(payload["sub"]))
+            active_store_id = (
+                uuid.UUID(str(payload["store_id"])) if payload.get("store_id") else None
+            )
+        except ValueError as exc:
+            raise AppException(
+                code="INVALID_TOKEN",
+                message="Token noto'g'ri.",
+                status_code=401,
+            ) from exc
+
+        user = await self.repo.get_user_by_id(user_id)
+        if user is None or not user.is_active:
+            raise AppException(code="UNAUTHORIZED", message="Avtorizatsiya kerak.", status_code=401)
+
+        stores = await self.repo.list_user_stores(user.id)
+        if active_store_id is not None and all(store.id != active_store_id for store in stores):
+            active_store_id = None
+        if active_store_id is None and len(stores) == 1:
+            active_store_id = stores[0].id
+
+        await blacklist_token(refresh_token or "")
+        return self._build_session(user=user, stores=stores, active_store_id=active_store_id)
+
     async def select_store(self, *, user_id: uuid.UUID, store_id: uuid.UUID) -> AuthSession:
         user = await self.repo.get_user_by_id(user_id)
         if user is None or not user.is_active:
@@ -187,9 +227,12 @@ class AuthService:
         if active_store is not None:
             token_claims["store_id"] = str(active_store.id)
 
+        refresh_claims = {key: value for key, value in token_claims.items() if key != "csrf"}
         access_token = create_access_token(str(user.id), token_claims)
+        refresh_token = create_refresh_token(str(user.id), refresh_claims)
         return AuthSession(
             access_token=access_token,
+            refresh_token=refresh_token,
             response=AuthResponse(
                 user=UserResponse.model_validate(user),
                 stores=store_responses,

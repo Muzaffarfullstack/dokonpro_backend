@@ -12,7 +12,13 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.enums import UserRole
 from app.core.exceptions import AppException
-from app.core.security import ACCESS_TOKEN_COOKIE, CSRF_HEADER, CSRF_TOKEN_COOKIE, decode_token
+from app.core.security import (
+    ACCESS_TOKEN_COOKIE,
+    CSRF_HEADER,
+    CSRF_TOKEN_COOKIE,
+    decode_token,
+    is_token_blacklisted,
+)
 from app.models import Store, User
 from app.utils.subscription import subscription_allows_write
 
@@ -25,6 +31,8 @@ class AuthContext:
     role: str
     csrf_token: str | None = None
     store_id: uuid.UUID | None = None
+    token_id: str | None = None
+    token_source: str = "cookie"
 
 
 def _bearer_token(request: Request) -> str | None:
@@ -37,14 +45,25 @@ def _bearer_token(request: Request) -> str | None:
     return token
 
 
+def _auth_token(request: Request) -> tuple[str | None, str]:
+    cookie_token = request.cookies.get(ACCESS_TOKEN_COOKIE)
+    if cookie_token:
+        return cookie_token, "cookie"
+    return _bearer_token(request), "bearer"
+
+
 async def get_auth_context(request: Request) -> AuthContext:
-    token = request.cookies.get(ACCESS_TOKEN_COOKIE) or _bearer_token(request)
+    token, token_source = _auth_token(request)
     if not token:
         raise AppException(code="UNAUTHORIZED", message="Avtorizatsiya kerak.", status_code=401)
 
     payload = decode_token(token)
     if payload is None or payload.get("type") != "access" or not payload.get("sub"):
         raise AppException(code="INVALID_TOKEN", message="Token noto'g'ri.", status_code=401)
+
+    token_id = str(payload.get("jti") or "")
+    if await is_token_blacklisted(token_id):
+        raise AppException(code="TOKEN_REVOKED", message="Token bekor qilingan.", status_code=401)
 
     try:
         user_id = uuid.UUID(str(payload["sub"]))
@@ -61,6 +80,8 @@ async def get_auth_context(request: Request) -> AuthContext:
         role=str(payload.get("role") or UserRole.OWNER.value),
         csrf_token=payload.get("csrf"),
         store_id=store_id,
+        token_id=token_id or None,
+        token_source=token_source,
     )
 
 
@@ -84,6 +105,9 @@ async def require_csrf(
     csrf_header_token: Annotated[str | None, Header(alias=CSRF_HEADER)] = None,
 ) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS", "TRACE"}:
+        return
+
+    if getattr(auth, "token_source", "cookie") == "bearer":
         return
 
     header_token = csrf_header_token or request.headers.get(CSRF_HEADER)

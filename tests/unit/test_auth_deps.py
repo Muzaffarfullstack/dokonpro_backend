@@ -68,6 +68,20 @@ async def test_get_auth_context_reads_httponly_cookie_token() -> None:
     assert context.user_id == user_id
     assert context.store_id == store_id
     assert context.csrf_token == "csrf-token"
+    assert context.token_id
+    assert context.token_source == "cookie"
+
+
+@pytest.mark.asyncio
+async def test_get_auth_context_reads_bearer_token() -> None:
+    user_id = uuid.uuid4()
+    token = create_access_token(str(user_id), {"role": UserRole.OWNER.value})
+    request = make_request(headers={"authorization": f"Bearer {token}"})
+
+    context = await get_auth_context(request)
+
+    assert context.user_id == user_id
+    assert context.token_source == "bearer"
 
 
 @pytest.mark.asyncio
@@ -130,6 +144,16 @@ async def test_require_csrf_rejects_mismatched_claim() -> None:
 
     assert exc.value.code == "CSRF_TOKEN_INVALID"
     assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_require_csrf_skips_bearer_token_requests() -> None:
+    request = make_request(method="POST")
+
+    await require_csrf(
+        request,
+        auth=type("Auth", (), {"csrf_token": None, "token_source": "bearer"})(),
+    )
 
 
 @pytest.mark.asyncio

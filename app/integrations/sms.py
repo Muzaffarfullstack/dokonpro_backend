@@ -5,8 +5,12 @@ from abc import ABC, abstractmethod
 import httpx
 
 from app.core.config import settings
+from app.core.database import get_redis
 from app.core.enums import SmsProviderType
 from app.core.exceptions import AppException
+
+ESKIZ_TOKEN_CACHE_KEY = "sms:eskiz:token"
+ESKIZ_TOKEN_TTL_SECONDS = 23 * 60 * 60
 
 
 class SmsProvider(ABC):
@@ -48,6 +52,13 @@ class EskizSmsProvider(SmsProvider):
                 )
 
     async def _get_token(self, client: httpx.AsyncClient) -> str:
+        try:
+            cached_token = await get_redis().get(ESKIZ_TOKEN_CACHE_KEY)
+            if cached_token:
+                return str(cached_token)
+        except Exception:
+            pass
+
         response = await client.post(
             "/auth/login",
             data={
@@ -70,7 +81,14 @@ class EskizSmsProvider(SmsProvider):
                 message="SMS provider token qaytarmadi.",
                 status_code=502,
             )
-        return str(token)
+        token = str(token)
+
+        try:
+            await get_redis().setex(ESKIZ_TOKEN_CACHE_KEY, ESKIZ_TOKEN_TTL_SECONDS, token)
+        except Exception:
+            pass
+
+        return token
 
 
 def get_sms_provider() -> SmsProvider:

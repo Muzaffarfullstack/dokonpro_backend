@@ -13,8 +13,8 @@ class RegisterRequest(BaseModel):
     last_name: str = Field(min_length=2, max_length=60)
     store_name: str = Field(min_length=2, max_length=120)
     phone: str = Field(min_length=9, max_length=32)
-    password: str = Field(min_length=8, max_length=128)
-    password_confirm: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=8, max_length=72)
+    password_confirm: str = Field(min_length=8, max_length=72)
     otp_code: str = Field(min_length=4, max_length=8)
 
     @field_validator("first_name", "last_name", "store_name", "phone", "otp_code")
@@ -31,7 +31,7 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     phone: str = Field(min_length=9, max_length=32)
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=8, max_length=72)
 
     @field_validator("phone")
     @classmethod
@@ -80,8 +80,8 @@ class OtpVerifyResponse(BaseModel):
 class PasswordResetRequest(BaseModel):
     phone: str = Field(min_length=8, max_length=32)
     phone_verification_token: str = Field(min_length=16, max_length=256)
-    new_password: str = Field(min_length=8, max_length=128)
-    new_password_confirm: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=8, max_length=72)
+    new_password_confirm: str = Field(min_length=8, max_length=72)
 
     @field_validator("phone")
     @classmethod
