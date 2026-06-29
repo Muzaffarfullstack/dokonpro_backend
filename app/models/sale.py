@@ -5,7 +5,17 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,6 +44,7 @@ class Sale(StoreScopedEntity):
         CheckConstraint("discount_total >= 0", name="discount_total_non_negative"),
         CheckConstraint("total_amount >= 0", name="total_amount_non_negative"),
         CheckConstraint("paid_amount >= 0", name="paid_amount_non_negative"),
+        UniqueConstraint("store_id", "idempotency_key", name="uq_sales_store_idempotency_key"),
         Index("ix_sales_store_sold_at", "store_id", "sold_at"),
         Index("ix_sales_store_status", "store_id", "status"),
     )
@@ -68,6 +79,7 @@ class Sale(StoreScopedEntity):
         nullable=False,
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     sold_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

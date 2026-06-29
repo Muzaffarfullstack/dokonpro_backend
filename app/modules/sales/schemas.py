@@ -16,6 +16,7 @@ class SaleCheckoutItemRequest(BaseModel):
 
 
 class SaleCheckoutRequest(BaseModel):
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
     customer_name: str | None = Field(default=None, max_length=120)
     customer_phone: str | None = Field(default=None, max_length=32)
     items: list[SaleCheckoutItemRequest] = Field(min_length=1)
@@ -25,7 +26,13 @@ class SaleCheckoutRequest(BaseModel):
     payment_reference: str | None = Field(default=None, max_length=120)
     note: str | None = Field(default=None, max_length=1000)
 
-    @field_validator("customer_name", "customer_phone", "payment_reference", "note")
+    @field_validator(
+        "idempotency_key",
+        "customer_name",
+        "customer_phone",
+        "payment_reference",
+        "note",
+    )
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         return value.strip() if value else value

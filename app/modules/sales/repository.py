@@ -8,7 +8,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Payment, Sale, SaleItem, StockMovement, StoreProduct
+from app.models import Debtor, DebtTransaction, Payment, Sale, SaleItem, StockMovement, StoreProduct
 
 
 class SalesRepository:
@@ -37,6 +37,7 @@ class SalesRepository:
         self,
         *,
         store_id: uuid.UUID,
+        idempotency_key: str | None,
         customer_name: str | None,
         customer_phone: str | None,
         status: str,
@@ -50,6 +51,7 @@ class SalesRepository:
     ) -> Sale:
         sale = Sale(
             store_id=store_id,
+            idempotency_key=idempotency_key,
             customer_name=customer_name,
             customer_phone=customer_phone,
             status=status,
@@ -64,6 +66,19 @@ class SalesRepository:
         self.db.add(sale)
         await self.db.flush()
         return sale
+
+    async def get_sale_by_idempotency_key(
+        self,
+        *,
+        store_id: uuid.UUID,
+        idempotency_key: str,
+    ) -> Sale | None:
+        result = await self.db.execute(
+            select(Sale)
+            .options(selectinload(Sale.items), selectinload(Sale.payments))
+            .where(Sale.store_id == store_id, Sale.idempotency_key == idempotency_key)
+        )
+        return result.scalar_one_or_none()
 
     async def create_sale_item(
         self,
@@ -116,6 +131,57 @@ class SalesRepository:
         self.db.add(payment)
         await self.db.flush()
         return payment
+
+    async def get_debtor_by_phone_for_update(
+        self,
+        *,
+        store_id: uuid.UUID,
+        phone: str,
+    ) -> Debtor | None:
+        result = await self.db.execute(
+            select(Debtor)
+            .where(
+                Debtor.store_id == store_id,
+                Debtor.phone == phone,
+                Debtor.is_active.is_(True),
+            )
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def create_debtor(
+        self,
+        *,
+        store_id: uuid.UUID,
+        name: str,
+        phone: str,
+    ) -> Debtor:
+        debtor = Debtor(store_id=store_id, name=name, phone=phone, balance=Decimal("0"))
+        self.db.add(debtor)
+        await self.db.flush()
+        return debtor
+
+    async def create_debt_transaction(
+        self,
+        *,
+        store_id: uuid.UUID,
+        debtor_id: uuid.UUID,
+        sale_id: uuid.UUID,
+        transaction_type: str,
+        amount: Decimal,
+        note: str | None,
+    ) -> DebtTransaction:
+        transaction = DebtTransaction(
+            store_id=store_id,
+            debtor_id=debtor_id,
+            sale_id=sale_id,
+            transaction_type=transaction_type,
+            amount=amount,
+            note=note,
+        )
+        self.db.add(transaction)
+        await self.db.flush()
+        return transaction
 
     async def create_stock_movement(
         self,

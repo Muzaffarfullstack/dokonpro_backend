@@ -174,6 +174,24 @@ class ProductsRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_store_product_by_barcode(
+        self,
+        *,
+        store_id: uuid.UUID,
+        barcode: str,
+    ) -> StoreProduct | None:
+        result = await self.db.execute(
+            select(StoreProduct)
+            .options(selectinload(StoreProduct.product))
+            .join(StoreProduct.product)
+            .where(
+                StoreProduct.store_id == store_id,
+                StoreProduct.is_active.is_(True),
+                Product.barcode == barcode,
+            )
+        )
+        return result.scalar_one_or_none()
+
     def _store_products_query(
         self,
         *,

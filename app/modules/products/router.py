@@ -46,7 +46,6 @@ async def create_category(
     payload: CategoryCreateRequest,
     db: DbSession,
     _: CsrfGuard,
-    __: WriteAccess,
 ) -> ApiResponse[CategoryResponse]:
     category = await ProductsService(db).create_category(payload)
     return ApiResponse(
@@ -78,7 +77,6 @@ async def create_catalog_product(
     payload: ProductCatalogCreateRequest,
     db: DbSession,
     _: CsrfGuard,
-    __: WriteAccess,
 ) -> ApiResponse[ProductCatalogResponse]:
     product = await ProductsService(db).create_catalog_product(payload)
     return ApiResponse(
@@ -127,6 +125,19 @@ async def add_product_to_store(
         data=StoreProductResponse.model_validate(store_product),
         message="Mahsulot do'kon inventorysiga qo'shildi.",
     )
+
+
+@router.get("/barcode/{barcode}", response_model=ApiResponse[StoreProductResponse])
+async def get_store_product_by_barcode(
+    barcode: str,
+    db: DbSession,
+    store_id: ActiveStoreId,
+) -> ApiResponse[StoreProductResponse]:
+    store_product = await ProductsService(db).get_store_product_by_barcode(
+        store_id=store_id,
+        barcode=barcode,
+    )
+    return ApiResponse(data=StoreProductResponse.model_validate(store_product))
 
 
 @router.get("/{store_product_id}", response_model=ApiResponse[StoreProductResponse])

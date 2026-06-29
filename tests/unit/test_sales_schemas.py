@@ -21,6 +21,7 @@ def test_checkout_item_schema_rejects_zero_quantity() -> None:
 
 def test_checkout_schema_strips_optional_text() -> None:
     payload = SaleCheckoutRequest(
+        idempotency_key=" checkout-123 ",
         customer_name="  Ali  ",
         customer_phone=" +998901234567 ",
         payment_reference=" REF-1 ",
@@ -33,6 +34,7 @@ def test_checkout_schema_strips_optional_text() -> None:
         ],
     )
 
+    assert payload.idempotency_key == "checkout-123"
     assert payload.customer_name == "Ali"
     assert payload.customer_phone == "+998901234567"
     assert payload.payment_reference == "REF-1"

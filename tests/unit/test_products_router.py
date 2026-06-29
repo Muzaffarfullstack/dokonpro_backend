@@ -11,6 +11,7 @@ def test_products_routes_are_registered() -> None:
     assert "/api/v1/products/categories" in paths
     assert "/api/v1/products/catalog" in paths
     assert "/api/v1/products" in paths
+    assert "/api/v1/products/barcode/{barcode}" in paths
     assert "/api/v1/products/{store_product_id}" in paths
     assert "/api/v1/products/{store_product_id}/stock" in paths
     assert paths["/api/v1/products/catalog"]["post"]["tags"] == ["products"]

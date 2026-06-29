@@ -4,9 +4,24 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.enums import PaymentMethod, SalePaymentStatus, SaleStatus, StockMovementType
+from app.core.enums import (
+    DebtTransactionType,
+    PaymentMethod,
+    SalePaymentStatus,
+    SaleStatus,
+    StockMovementType,
+)
 from app.core.exceptions import AppException
-from app.models import Payment, Product, Sale, SaleItem, StockMovement, StoreProduct
+from app.models import (
+    Debtor,
+    DebtTransaction,
+    Payment,
+    Product,
+    Sale,
+    SaleItem,
+    StockMovement,
+    StoreProduct,
+)
 from app.modules.sales.schemas import SaleCheckoutItemRequest, SaleCheckoutRequest
 from app.modules.sales.service import SalesService
 
@@ -25,6 +40,8 @@ class FakeSalesRepository:
     sale_items: list[SaleItem] = []
     payments: list[Payment] = []
     movements: list[StockMovement] = []
+    debtors_by_phone: dict[tuple[uuid.UUID, str], Debtor] = {}
+    debt_transactions: list[DebtTransaction] = []
 
     def __init__(self, _: object) -> None:
         pass
@@ -41,6 +58,7 @@ class FakeSalesRepository:
         self,
         *,
         store_id: uuid.UUID,
+        idempotency_key: str | None,
         customer_name: str | None,
         customer_phone: str | None,
         status: str,
@@ -55,6 +73,7 @@ class FakeSalesRepository:
         sale = Sale(
             id=uuid.uuid4(),
             store_id=store_id,
+            idempotency_key=idempotency_key,
             customer_name=customer_name,
             customer_phone=customer_phone,
             status=status,
@@ -71,6 +90,17 @@ class FakeSalesRepository:
         sale.payments = []
         type(self).sales[(store_id, sale.id)] = sale
         return sale
+
+    async def get_sale_by_idempotency_key(
+        self,
+        *,
+        store_id: uuid.UUID,
+        idempotency_key: str,
+    ) -> Sale | None:
+        for (current_store_id, _), sale in type(self).sales.items():
+            if current_store_id == store_id and sale.idempotency_key == idempotency_key:
+                return sale
+        return None
 
     async def create_sale_item(
         self,
@@ -153,6 +183,56 @@ class FakeSalesRepository:
         type(self).movements.append(movement)
         return movement
 
+    async def get_debtor_by_phone_for_update(
+        self,
+        *,
+        store_id: uuid.UUID,
+        phone: str,
+    ) -> Debtor | None:
+        return type(self).debtors_by_phone.get((store_id, phone))
+
+    async def create_debtor(
+        self,
+        *,
+        store_id: uuid.UUID,
+        name: str,
+        phone: str,
+    ) -> Debtor:
+        debtor = Debtor(
+            id=uuid.uuid4(),
+            store_id=store_id,
+            name=name,
+            phone=phone,
+            balance=Decimal("0"),
+            is_active=True,
+        )
+        debtor.transactions = []
+        type(self).debtors_by_phone[(store_id, phone)] = debtor
+        return debtor
+
+    async def create_debt_transaction(
+        self,
+        *,
+        store_id: uuid.UUID,
+        debtor_id: uuid.UUID,
+        sale_id: uuid.UUID,
+        transaction_type: str,
+        amount: Decimal,
+        note: str | None,
+    ) -> DebtTransaction:
+        transaction = DebtTransaction(
+            id=uuid.uuid4(),
+            store_id=store_id,
+            debtor_id=debtor_id,
+            sale_id=sale_id,
+            transaction_type=transaction_type,
+            amount=amount,
+            note=note,
+            transaction_at=datetime.now(UTC),
+        )
+        type(self).debt_transactions.append(transaction)
+        return transaction
+
     async def get_sale(self, *, store_id: uuid.UUID, sale_id: uuid.UUID) -> Sale | None:
         return type(self).sales.get((store_id, sale_id))
 
@@ -180,6 +260,8 @@ def patch_repository(monkeypatch):
     FakeSalesRepository.sale_items = []
     FakeSalesRepository.payments = []
     FakeSalesRepository.movements = []
+    FakeSalesRepository.debtors_by_phone = {}
+    FakeSalesRepository.debt_transactions = []
     monkeypatch.setattr(sales_service, "SalesRepository", FakeSalesRepository)
 
 
@@ -244,7 +326,7 @@ async def test_checkout_creates_sale_items_payment_and_stock_movement() -> None:
     assert sale.items[0].total_amount == Decimal("21000.00")
     assert sale.payments[0].amount == Decimal("20500.00")
     assert FakeSalesRepository.movements[0].movement_type == StockMovementType.OUT.value
-    assert FakeSalesRepository.movements[0].quantity == Decimal("-2")
+    assert FakeSalesRepository.movements[0].quantity == Decimal("2")
 
 
 @pytest.mark.asyncio
@@ -261,6 +343,8 @@ async def test_checkout_sets_partial_payment_status() -> None:
                     quantity=Decimal("1"),
                 )
             ],
+            customer_name="Ali",
+            customer_phone="+998901234567",
             paid_amount=Decimal("5000"),
         ),
     )
@@ -268,6 +352,59 @@ async def test_checkout_sets_partial_payment_status() -> None:
     assert sale.payment_status == SalePaymentStatus.PARTIAL.value
     assert sale.paid_amount == Decimal("5000.00")
     assert sale.change_amount == Decimal("0.00")
+    debtor = FakeSalesRepository.debtors_by_phone[(store_id, "+998901234567")]
+    assert debtor.balance == Decimal("6000.00")
+    assert (
+        FakeSalesRepository.debt_transactions[0].transaction_type
+        == DebtTransactionType.BORROW.value
+    )
+    assert FakeSalesRepository.debt_transactions[0].amount == Decimal("6000.00")
+
+
+@pytest.mark.asyncio
+async def test_checkout_rejects_debt_without_customer_details() -> None:
+    store_id = uuid.uuid4()
+    store_product = make_store_product(store_id=store_id)
+
+    with pytest.raises(AppException) as exc:
+        await SalesService(FakeDb()).checkout(
+            store_id=store_id,
+            payload=SaleCheckoutRequest(
+                items=[
+                    SaleCheckoutItemRequest(
+                        store_product_id=store_product.id,
+                        quantity=Decimal("1"),
+                    )
+                ],
+                paid_amount=Decimal("5000"),
+            ),
+        )
+
+    assert exc.value.code == "DEBTOR_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_checkout_returns_existing_sale_for_same_idempotency_key() -> None:
+    store_id = uuid.uuid4()
+    store_product = make_store_product(store_id=store_id)
+    service = SalesService(FakeDb())
+    payload = SaleCheckoutRequest(
+        idempotency_key="checkout-123",
+        items=[
+            SaleCheckoutItemRequest(
+                store_product_id=store_product.id,
+                quantity=Decimal("1"),
+            )
+        ],
+        paid_amount=Decimal("11000"),
+    )
+
+    first_sale = await service.checkout(store_id=store_id, payload=payload)
+    second_sale = await service.checkout(store_id=store_id, payload=payload)
+
+    assert second_sale.id == first_sale.id
+    assert len(FakeSalesRepository.sales) == 1
+    assert store_product.stock_quantity == Decimal("9")
 
 
 @pytest.mark.asyncio
@@ -352,6 +489,7 @@ async def test_list_and_get_sales() -> None:
                     quantity=Decimal("1"),
                 )
             ],
+            paid_amount=Decimal("11000"),
         ),
     )
 

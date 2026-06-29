@@ -127,6 +127,17 @@ class FakeProductsRepository:
     ) -> StoreProduct | None:
         return type(self).store_products_by_sku.get((store_id, local_sku))
 
+    async def get_store_product_by_barcode(
+        self,
+        *,
+        store_id: uuid.UUID,
+        barcode: str,
+    ) -> StoreProduct | None:
+        for (current_store_id, _), store_product in type(self).store_products_by_id.items():
+            if current_store_id == store_id and store_product.product.barcode == barcode:
+                return store_product
+        return None
+
     async def create_store_product(
         self,
         *,
@@ -490,6 +501,28 @@ async def test_deactivate_store_product_marks_item_inactive() -> None:
     )
 
     assert store_product.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_get_store_product_by_barcode_is_store_scoped() -> None:
+    service = ProductsService(FakeDb())
+    product = await service.create_catalog_product(
+        ProductCatalogCreateRequest(name="Shakar", barcode="123456")
+    )
+    store_id = uuid.uuid4()
+    other_store_id = uuid.uuid4()
+    store_product = await service.add_product_to_store(
+        store_id=store_id,
+        payload=StoreProductCreateRequest(product_id=product.id, sale_price=Decimal("11000")),
+    )
+
+    found = await service.get_store_product_by_barcode(store_id=store_id, barcode="123456")
+
+    assert found.id == store_product.id
+    with pytest.raises(AppException) as exc:
+        await service.get_store_product_by_barcode(store_id=other_store_id, barcode="123456")
+
+    assert exc.value.code == "STORE_PRODUCT_NOT_FOUND"
 
 
 @pytest.mark.asyncio

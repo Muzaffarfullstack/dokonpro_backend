@@ -6,7 +6,13 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import PaymentStatus, SalePaymentStatus, SaleStatus, StockMovementType
+from app.core.enums import (
+    DebtTransactionType,
+    PaymentStatus,
+    SalePaymentStatus,
+    SaleStatus,
+    StockMovementType,
+)
 from app.core.exceptions import AppException
 from app.core.responses import ApiListResponse
 from app.models import Sale, StoreProduct
@@ -32,6 +38,14 @@ class SalesService:
         self.repo = SalesRepository(db)
 
     async def checkout(self, *, store_id: uuid.UUID, payload: SaleCheckoutRequest) -> Sale:
+        if payload.idempotency_key:
+            existing_sale = await self.repo.get_sale_by_idempotency_key(
+                store_id=store_id,
+                idempotency_key=payload.idempotency_key,
+            )
+            if existing_sale is not None:
+                return existing_sale
+
         self._ensure_unique_items(payload.items)
         prepared_items = await self._prepare_items(store_id=store_id, items=payload.items)
 
@@ -62,9 +76,13 @@ class SalesService:
         paid_applied = min(self._money(payload.paid_amount), total_amount)
         change_amount = self._money(max(payload.paid_amount - total_amount, Decimal("0")))
         payment_status = self._payment_status(paid_amount=paid_applied, total_amount=total_amount)
+        remaining_debt = self._money(total_amount - paid_applied)
+        if remaining_debt > 0:
+            self._ensure_debtor_details(payload)
 
         sale = await self.repo.create_sale(
             store_id=store_id,
+            idempotency_key=payload.idempotency_key,
             customer_name=payload.customer_name,
             customer_phone=payload.customer_phone,
             status=SaleStatus.COMPLETED.value,
@@ -95,7 +113,7 @@ class SalesService:
                 store_product_id=item.store_product.id,
                 sale_id=sale.id,
                 movement_type=StockMovementType.OUT.value,
-                quantity=-item.payload.quantity,
+                quantity=item.payload.quantity,
                 unit_cost=item.store_product.cost_price,
                 reason="sale",
                 note=None,
@@ -110,6 +128,14 @@ class SalesService:
                 status=PaymentStatus.COMPLETED.value,
                 reference=payload.payment_reference,
                 note=payload.note,
+            )
+
+        if remaining_debt > 0:
+            await self._create_sale_debt(
+                store_id=store_id,
+                sale=sale,
+                payload=payload,
+                amount=remaining_debt,
             )
 
         await self.db.commit()
@@ -210,6 +236,45 @@ class SalesService:
         if paid_amount > 0:
             return SalePaymentStatus.PARTIAL
         return SalePaymentStatus.UNPAID
+
+    def _ensure_debtor_details(self, payload: SaleCheckoutRequest) -> None:
+        if payload.customer_name and payload.customer_phone:
+            return
+        raise AppException(
+            code="DEBTOR_REQUIRED",
+            message="Nasiya sotuv uchun mijoz ismi va telefon raqami kerak.",
+            status_code=400,
+            field="customer_phone",
+        )
+
+    async def _create_sale_debt(
+        self,
+        *,
+        store_id: uuid.UUID,
+        sale: Sale,
+        payload: SaleCheckoutRequest,
+        amount: Decimal,
+    ) -> None:
+        debtor = await self.repo.get_debtor_by_phone_for_update(
+            store_id=store_id,
+            phone=payload.customer_phone or "",
+        )
+        if debtor is None:
+            debtor = await self.repo.create_debtor(
+                store_id=store_id,
+                name=payload.customer_name or "",
+                phone=payload.customer_phone or "",
+            )
+
+        debtor.balance += amount
+        await self.repo.create_debt_transaction(
+            store_id=store_id,
+            debtor_id=debtor.id,
+            sale_id=sale.id,
+            transaction_type=DebtTransactionType.BORROW.value,
+            amount=amount,
+            note=payload.note,
+        )
 
     def _money(self, value: Decimal) -> Decimal:
         return value.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)

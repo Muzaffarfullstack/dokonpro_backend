@@ -225,6 +225,25 @@ class ProductsService:
             )
         return store_product
 
+    async def get_store_product_by_barcode(
+        self,
+        *,
+        store_id: uuid.UUID,
+        barcode: str,
+    ) -> StoreProduct:
+        store_product = await self.repo.get_store_product_by_barcode(
+            store_id=store_id,
+            barcode=barcode,
+        )
+        if store_product is None:
+            raise AppException(
+                code="STORE_PRODUCT_NOT_FOUND",
+                message="Barcode bo'yicha do'kon mahsuloti topilmadi.",
+                status_code=404,
+                field="barcode",
+            )
+        return store_product
+
     async def update_store_product(
         self,
         *,
