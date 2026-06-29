@@ -17,7 +17,12 @@ from app.core.exceptions import AppException
 from app.core.responses import ApiListResponse
 from app.models import Sale, StoreProduct
 from app.modules.sales.repository import SalesRepository
-from app.modules.sales.schemas import SaleCheckoutItemRequest, SaleCheckoutRequest
+from app.modules.sales.schemas import (
+    SaleCancelRequest,
+    SaleCheckoutItemRequest,
+    SaleCheckoutRequest,
+    SalePaymentItemRequest,
+)
 from app.utils.pagination import build_pagination
 
 MONEY_QUANT = Decimal("0.01")
@@ -28,6 +33,7 @@ class PreparedSaleItem:
     payload: SaleCheckoutItemRequest
     store_product: StoreProduct
     unit_price: Decimal
+    purchase_price_snapshot: Decimal
     gross_amount: Decimal
     total_amount: Decimal
 
@@ -73,8 +79,10 @@ class SalesService:
 
         discount_total = self._money(item_discount_total + order_discount)
         total_amount = self._money(subtotal - discount_total)
-        paid_applied = min(self._money(payload.paid_amount), total_amount)
-        change_amount = self._money(max(payload.paid_amount - total_amount, Decimal("0")))
+        payment_items = self._payment_items(payload)
+        paid_requested = self._money(sum(item.amount for item in payment_items))
+        paid_applied = min(paid_requested, total_amount)
+        change_amount = self._money(max(paid_requested - total_amount, Decimal("0")))
         payment_status = self._payment_status(paid_amount=paid_applied, total_amount=total_amount)
         remaining_debt = self._money(total_amount - paid_applied)
         if remaining_debt > 0:
@@ -105,6 +113,7 @@ class SalesService:
                 local_sku=item.store_product.local_sku,
                 quantity=item.payload.quantity,
                 unit_price=item.unit_price,
+                purchase_price_snapshot=item.purchase_price_snapshot,
                 discount_amount=self._money(item.payload.discount_amount),
                 total_amount=item.total_amount,
             )
@@ -119,16 +128,21 @@ class SalesService:
                 note=None,
             )
 
-        if paid_applied > 0:
+        remaining_payment = paid_applied
+        for payment_item in payment_items:
+            if remaining_payment <= 0:
+                break
+            payment_amount = min(self._money(payment_item.amount), remaining_payment)
             await self.repo.create_payment(
                 store_id=store_id,
                 sale_id=sale.id,
-                amount=paid_applied,
-                method=payload.payment_method.value,
+                amount=payment_amount,
+                method=payment_item.method.value,
                 status=PaymentStatus.COMPLETED.value,
-                reference=payload.payment_reference,
-                note=payload.note,
+                reference=payment_item.reference,
+                note=payment_item.note or payload.note,
             )
+            remaining_payment = self._money(remaining_payment - payment_amount)
 
         if remaining_debt > 0:
             await self._create_sale_debt(
@@ -137,6 +151,88 @@ class SalesService:
                 payload=payload,
                 amount=remaining_debt,
             )
+
+        await self.db.commit()
+        persisted_sale = await self.repo.get_sale(store_id=store_id, sale_id=sale.id)
+        return persisted_sale or sale
+
+    async def cancel_sale(
+        self,
+        *,
+        store_id: uuid.UUID,
+        sale_id: uuid.UUID,
+        payload: SaleCancelRequest,
+    ) -> Sale:
+        sale = await self.repo.get_sale_for_update(store_id=store_id, sale_id=sale_id)
+        if sale is None:
+            raise AppException(code="SALE_NOT_FOUND", message="Sotuv topilmadi.", status_code=404)
+        if sale.status == SaleStatus.CANCELLED.value:
+            raise AppException(
+                code="SALE_ALREADY_CANCELLED",
+                message="Sotuv allaqachon bekor qilingan.",
+                status_code=409,
+            )
+        if sale.status != SaleStatus.COMPLETED.value:
+            raise AppException(
+                code="SALE_CANNOT_BE_CANCELLED",
+                message="Faqat yakunlangan sotuvni bekor qilish mumkin.",
+                status_code=409,
+            )
+
+        for item in sale.items:
+            store_product = await self.repo.get_store_product_for_update(
+                store_id=store_id,
+                store_product_id=item.store_product_id,
+            )
+            if store_product is None:
+                raise AppException(
+                    code="STORE_PRODUCT_NOT_FOUND",
+                    message="Do'kon mahsuloti topilmadi.",
+                    status_code=404,
+                    field="store_product_id",
+                )
+            store_product.stock_quantity += item.quantity
+            await self.repo.create_stock_movement(
+                store_id=store_id,
+                store_product_id=item.store_product_id,
+                sale_id=sale.id,
+                movement_type=StockMovementType.RETURN.value,
+                quantity=item.quantity,
+                unit_cost=item.purchase_price_snapshot,
+                reason="sale_cancel",
+                note=payload.note,
+            )
+
+        for payment in sale.payments:
+            if payment.status == PaymentStatus.COMPLETED.value:
+                payment.status = PaymentStatus.REFUNDED.value
+
+        debt_transactions = await self.repo.list_debt_transactions_by_sale(
+            store_id=store_id,
+            sale_id=sale.id,
+        )
+        for transaction in debt_transactions:
+            if transaction.transaction_type != DebtTransactionType.BORROW.value:
+                continue
+            debtor = await self.repo.get_debtor_for_update(
+                store_id=store_id,
+                debtor_id=transaction.debtor_id,
+            )
+            if debtor is None:
+                continue
+            debtor.balance = max(Decimal("0"), debtor.balance - transaction.amount)
+            await self.repo.create_debt_transaction(
+                store_id=store_id,
+                debtor_id=debtor.id,
+                sale_id=sale.id,
+                transaction_type=DebtTransactionType.ADJUSTMENT.value,
+                amount=transaction.amount,
+                note=payload.note or "sale_cancel",
+            )
+
+        sale.status = SaleStatus.CANCELLED.value
+        if sale.paid_amount > 0:
+            sale.payment_status = SalePaymentStatus.REFUNDED.value
 
         await self.db.commit()
         persisted_sale = await self.repo.get_sale(store_id=store_id, sale_id=sale.id)
@@ -209,11 +305,26 @@ class SalesService:
                     payload=item,
                     store_product=store_product,
                     unit_price=unit_price,
+                    purchase_price_snapshot=self._money(store_product.cost_price),
                     gross_amount=gross_amount,
                     total_amount=self._money(gross_amount - discount_amount),
                 )
             )
         return prepared_items
+
+    def _payment_items(self, payload: SaleCheckoutRequest) -> list[SalePaymentItemRequest]:
+        if payload.payments:
+            return payload.payments
+        if payload.paid_amount > 0:
+            return [
+                SalePaymentItemRequest(
+                    amount=payload.paid_amount,
+                    method=payload.payment_method,
+                    reference=payload.payment_reference,
+                    note=payload.note,
+                )
+            ]
+        return []
 
     def _ensure_unique_items(self, items: list[SaleCheckoutItemRequest]) -> None:
         product_ids = [item.store_product_id for item in items]

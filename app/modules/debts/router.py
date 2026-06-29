@@ -5,7 +5,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.core.deps import ActiveStoreId, CsrfGuard, DbSession, WriteAccess, get_auth_context
+from app.core.deps import (
+    ActiveStoreId,
+    CsrfGuard,
+    DbSession,
+    WriteAccess,
+    get_auth_context,
+    require_roles,
+)
+from app.core.enums import UserRole
 from app.core.responses import ApiListResponse, ApiResponse
 from app.modules.debts.schemas import (
     DebtAdjustmentRequest,
@@ -53,6 +61,7 @@ async def create_debtor(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER, UserRole.ACCOUNTANT)),
 ) -> ApiResponse[DebtorResponse]:
     debtor = await DebtsService(db).create_debtor(store_id=store_id, payload=payload)
     return ApiResponse(data=DebtorResponse.model_validate(debtor), message="Qarzdor yaratildi.")
@@ -76,6 +85,7 @@ async def update_debtor(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER, UserRole.ACCOUNTANT)),
 ) -> ApiResponse[DebtorResponse]:
     debtor = await DebtsService(db).update_debtor(
         store_id=store_id,
@@ -92,6 +102,7 @@ async def delete_debtor(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER)),
 ) -> ApiResponse[dict[str, bool]]:
     await DebtsService(db).deactivate_debtor(store_id=store_id, debtor_id=debtor_id)
     return ApiResponse(data={"deleted": True}, message="Qarzdor o'chirildi.")
@@ -109,6 +120,7 @@ async def borrow(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER, UserRole.ACCOUNTANT)),
 ) -> ApiResponse[DebtTransactionResponse]:
     transaction = await DebtsService(db).borrow(
         store_id=store_id,
@@ -133,6 +145,7 @@ async def repay(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER, UserRole.ACCOUNTANT)),
 ) -> ApiResponse[DebtTransactionResponse]:
     transaction = await DebtsService(db).repay(
         store_id=store_id,
@@ -157,6 +170,7 @@ async def adjust(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER)),
 ) -> ApiResponse[DebtTransactionResponse]:
     transaction = await DebtsService(db).adjust(
         store_id=store_id,

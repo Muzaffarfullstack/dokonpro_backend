@@ -90,6 +90,7 @@ class SalesRepository:
         local_sku: str | None,
         quantity: Decimal,
         unit_price: Decimal,
+        purchase_price_snapshot: Decimal,
         discount_amount: Decimal,
         total_amount: Decimal,
     ) -> SaleItem:
@@ -101,6 +102,7 @@ class SalesRepository:
             local_sku=local_sku,
             quantity=quantity,
             unit_price=unit_price,
+            purchase_price_snapshot=purchase_price_snapshot,
             discount_amount=discount_amount,
             total_amount=total_amount,
         )
@@ -143,6 +145,23 @@ class SalesRepository:
             .where(
                 Debtor.store_id == store_id,
                 Debtor.phone == phone,
+                Debtor.is_active.is_(True),
+            )
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def get_debtor_for_update(
+        self,
+        *,
+        store_id: uuid.UUID,
+        debtor_id: uuid.UUID,
+    ) -> Debtor | None:
+        result = await self.db.execute(
+            select(Debtor)
+            .where(
+                Debtor.id == debtor_id,
+                Debtor.store_id == store_id,
                 Debtor.is_active.is_(True),
             )
             .with_for_update()
@@ -209,11 +228,34 @@ class SalesRepository:
         await self.db.flush()
         return movement
 
+    async def list_debt_transactions_by_sale(
+        self,
+        *,
+        store_id: uuid.UUID,
+        sale_id: uuid.UUID,
+    ) -> Sequence[DebtTransaction]:
+        result = await self.db.execute(
+            select(DebtTransaction).where(
+                DebtTransaction.store_id == store_id,
+                DebtTransaction.sale_id == sale_id,
+            )
+        )
+        return result.scalars().all()
+
     async def get_sale(self, *, store_id: uuid.UUID, sale_id: uuid.UUID) -> Sale | None:
         result = await self.db.execute(
             select(Sale)
             .options(selectinload(Sale.items), selectinload(Sale.payments))
             .where(Sale.id == sale_id, Sale.store_id == store_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_sale_for_update(self, *, store_id: uuid.UUID, sale_id: uuid.UUID) -> Sale | None:
+        result = await self.db.execute(
+            select(Sale)
+            .options(selectinload(Sale.items), selectinload(Sale.payments))
+            .where(Sale.id == sale_id, Sale.store_id == store_id)
+            .with_for_update()
         )
         return result.scalar_one_or_none()
 

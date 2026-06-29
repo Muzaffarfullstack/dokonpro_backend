@@ -5,7 +5,13 @@ import pytest
 from starlette.requests import Request
 
 from app.core.constants import DEFAULT_MAX_PRODUCTS, DEFAULT_MAX_USERS
-from app.core.deps import get_auth_context, require_active_store, require_csrf, require_write_access
+from app.core.deps import (
+    get_auth_context,
+    require_active_store,
+    require_csrf,
+    require_roles,
+    require_write_access,
+)
 from app.core.enums import SubscriptionPlan, SubscriptionStatus, UserRole
 from app.core.exceptions import AppException
 from app.core.security import (
@@ -203,3 +209,21 @@ async def test_require_write_access_blocks_expired_trial() -> None:
 
     assert exc.value.code == "READ_ONLY_MODE"
     assert exc.value.status_code == 402
+
+
+@pytest.mark.asyncio
+async def test_require_roles_allows_expected_role() -> None:
+    dependency = require_roles(UserRole.OWNER, UserRole.MANAGER)
+
+    await dependency(type("Auth", (), {"role": UserRole.OWNER.value})())
+
+
+@pytest.mark.asyncio
+async def test_require_roles_rejects_unexpected_role() -> None:
+    dependency = require_roles(UserRole.OWNER, UserRole.MANAGER)
+
+    with pytest.raises(AppException) as exc:
+        await dependency(type("Auth", (), {"role": UserRole.CASHIER.value})())
+
+    assert exc.value.code == "FORBIDDEN_ROLE"
+    assert exc.value.status_code == 403

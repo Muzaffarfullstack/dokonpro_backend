@@ -5,7 +5,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.core.deps import ActiveStoreId, CsrfGuard, DbSession, WriteAccess, get_auth_context
+from app.core.deps import (
+    ActiveStoreId,
+    CsrfGuard,
+    DbSession,
+    WriteAccess,
+    get_auth_context,
+    require_roles,
+)
+from app.core.enums import UserRole
 from app.core.responses import ApiListResponse, ApiResponse
 from app.modules.products.schemas import (
     CategoryCreateRequest,
@@ -46,6 +54,7 @@ async def create_category(
     payload: CategoryCreateRequest,
     db: DbSession,
     _: CsrfGuard,
+    __: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER)),
 ) -> ApiResponse[CategoryResponse]:
     category = await ProductsService(db).create_category(payload)
     return ApiResponse(
@@ -77,6 +86,7 @@ async def create_catalog_product(
     payload: ProductCatalogCreateRequest,
     db: DbSession,
     _: CsrfGuard,
+    __: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER)),
 ) -> ApiResponse[ProductCatalogResponse]:
     product = await ProductsService(db).create_catalog_product(payload)
     return ApiResponse(
@@ -90,12 +100,18 @@ async def list_store_products(
     db: DbSession,
     store_id: ActiveStoreId,
     search: SearchQuery = None,
+    barcode: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    category_id: uuid.UUID | None = None,
+    low_stock: bool | None = None,
     page: PageQuery = 1,
     limit: LimitQuery = 20,
 ) -> ApiListResponse[StoreProductResponse]:
     result = await ProductsService(db).list_store_products(
         store_id=store_id,
         search=search,
+        barcode=barcode,
+        category_id=category_id,
+        low_stock=low_stock,
         page=page,
         limit=limit,
     )
@@ -116,6 +132,7 @@ async def add_product_to_store(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER)),
 ) -> ApiResponse[StoreProductResponse]:
     store_product = await ProductsService(db).add_product_to_store(
         store_id=store_id,
@@ -161,6 +178,7 @@ async def update_store_product(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER)),
 ) -> ApiResponse[StoreProductResponse]:
     store_product = await ProductsService(db).update_store_product(
         store_id=store_id,
@@ -180,6 +198,7 @@ async def delete_store_product(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER)),
 ) -> ApiResponse[dict[str, bool]]:
     await ProductsService(db).deactivate_store_product(
         store_id=store_id,
@@ -200,6 +219,7 @@ async def record_stock_movement(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER)),
 ) -> ApiResponse[StockMovementResponse]:
     movement = await ProductsService(db).record_stock_movement(
         store_id=store_id,

@@ -104,6 +104,10 @@ class SaleItem(StoreScopedEntity):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="quantity_positive"),
         CheckConstraint("unit_price >= 0", name="unit_price_non_negative"),
+        CheckConstraint(
+            "purchase_price_snapshot >= 0",
+            name="purchase_price_snapshot_non_negative",
+        ),
         CheckConstraint("discount_amount >= 0", name="discount_amount_non_negative"),
         CheckConstraint("total_amount >= 0", name="total_amount_non_negative"),
         Index("ix_sale_items_store_sale", "store_id", "sale_id"),
@@ -124,6 +128,7 @@ class SaleItem(StoreScopedEntity):
     local_sku: Mapped[str | None] = mapped_column(String(80), nullable=True)
     quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    purchase_price_snapshot: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     discount_amount: Mapped[Decimal] = mapped_column(
         Numeric(14, 2),
         default=Decimal("0"),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -171,3 +172,21 @@ async def require_write_access(db: DbSession, store_id: ActiveStoreId) -> None:
 
 
 WriteAccess = Annotated[None, Depends(require_write_access)]
+
+
+def require_roles(*allowed_roles: UserRole | str) -> Callable[[CurrentAuth], None]:
+    allowed = {str(role.value if isinstance(role, UserRole) else role) for role in allowed_roles}
+
+    async def dependency(auth: CurrentAuth) -> None:
+        if auth.role not in allowed:
+            raise AppException(
+                code="FORBIDDEN_ROLE",
+                message="Bu amal uchun ruxsat yo'q.",
+                status_code=403,
+            )
+
+    return dependency
+
+
+def role_values(roles: Iterable[UserRole]) -> tuple[str, ...]:
+    return tuple(role.value for role in roles)

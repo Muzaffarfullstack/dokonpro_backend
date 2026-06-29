@@ -15,6 +15,18 @@ class SaleCheckoutItemRequest(BaseModel):
     discount_amount: Decimal = Field(default=Decimal("0"), ge=0)
 
 
+class SalePaymentItemRequest(BaseModel):
+    amount: Decimal = Field(gt=0)
+    method: PaymentMethod = PaymentMethod.CASH
+    reference: str | None = Field(default=None, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("reference", "note")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        return value.strip() if value else value
+
+
 class SaleCheckoutRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
     customer_name: str | None = Field(default=None, max_length=120)
@@ -24,6 +36,7 @@ class SaleCheckoutRequest(BaseModel):
     paid_amount: Decimal = Field(default=Decimal("0"), ge=0)
     payment_method: PaymentMethod = PaymentMethod.CASH
     payment_reference: str | None = Field(default=None, max_length=120)
+    payments: list[SalePaymentItemRequest] | None = Field(default=None, min_length=1)
     note: str | None = Field(default=None, max_length=1000)
 
     @field_validator(
@@ -38,6 +51,15 @@ class SaleCheckoutRequest(BaseModel):
         return value.strip() if value else value
 
 
+class SaleCancelRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("note")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        return value.strip() if value else value
+
+
 class SaleItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -47,6 +69,7 @@ class SaleItemResponse(BaseModel):
     local_sku: str | None
     quantity: Decimal
     unit_price: Decimal
+    purchase_price_snapshot: Decimal
     discount_amount: Decimal
     total_amount: Decimal
 

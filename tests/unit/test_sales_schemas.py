@@ -3,7 +3,12 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from app.modules.sales.schemas import SaleCheckoutItemRequest, SaleCheckoutRequest
+from app.core.enums import PaymentMethod
+from app.modules.sales.schemas import (
+    SaleCheckoutItemRequest,
+    SaleCheckoutRequest,
+    SalePaymentItemRequest,
+)
 
 
 def test_checkout_schema_requires_at_least_one_item() -> None:
@@ -39,3 +44,20 @@ def test_checkout_schema_strips_optional_text() -> None:
     assert payload.customer_phone == "+998901234567"
     assert payload.payment_reference == "REF-1"
     assert payload.note == "test"
+
+
+def test_checkout_schema_accepts_mixed_payments() -> None:
+    payload = SaleCheckoutRequest(
+        items=[
+            SaleCheckoutItemRequest(
+                store_product_id="3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                quantity=Decimal("1"),
+            )
+        ],
+        payments=[
+            SalePaymentItemRequest(amount=Decimal("5000"), method=PaymentMethod.CASH),
+            SalePaymentItemRequest(amount=Decimal("6000"), method=PaymentMethod.CARD),
+        ],
+    )
+
+    assert len(payload.payments or []) == 2

@@ -195,10 +195,16 @@ class ProductsService:
         search: str | None,
         page: int,
         limit: int,
+        barcode: str | None = None,
+        category_id: uuid.UUID | None = None,
+        low_stock: bool | None = None,
     ) -> ApiListResponse[StoreProduct]:
         products, total = await self.repo.list_store_products(
             store_id=store_id,
             search=search,
+            barcode=barcode,
+            category_id=category_id,
+            low_stock=low_stock,
             page=page,
             limit=limit,
         )

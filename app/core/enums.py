@@ -7,6 +7,7 @@ class UserRole(StrEnum):
     OWNER = "owner"
     MANAGER = "manager"
     CASHIER = "cashier"
+    ACCOUNTANT = "accountant"
 
 
 class SubscriptionPlan(StrEnum):

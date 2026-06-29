@@ -203,6 +203,9 @@ class FakeProductsRepository:
         *,
         store_id: uuid.UUID,
         search: str | None,
+        barcode: str | None,
+        category_id: uuid.UUID | None,
+        low_stock: bool | None,
         page: int,
         limit: int,
     ) -> tuple[list[StoreProduct], int]:
@@ -216,6 +219,18 @@ class FakeProductsRepository:
                 product
                 for product in products
                 if search.lower() in product.product.name.lower()
+            ]
+        if barcode:
+            products = [product for product in products if product.product.barcode == barcode]
+        if category_id:
+            products = [
+                product for product in products if product.product.category_id == category_id
+            ]
+        if low_stock is True:
+            products = [
+                product
+                for product in products
+                if product.stock_quantity <= product.low_stock_threshold
             ]
         return products[(page - 1) * limit : page * limit], len(products)
 
@@ -539,6 +554,9 @@ async def test_list_catalog_and_store_products_return_pagination() -> None:
     inventory = await service.list_store_products(
         store_id=store_id,
         search="Sha",
+        barcode=None,
+        category_id=None,
+        low_stock=None,
         page=1,
         limit=10,
     )
@@ -546,6 +564,38 @@ async def test_list_catalog_and_store_products_return_pagination() -> None:
     assert catalog.pagination.total == 1
     assert inventory.pagination.total == 1
     assert inventory.data[0].product.name == "Shakar"
+
+
+@pytest.mark.asyncio
+async def test_list_store_products_supports_barcode_category_and_low_stock_filters() -> None:
+    service = ProductsService(FakeDb())
+    category = await service.create_category(CategoryCreateRequest(name="Ichimliklar"))
+    product = await service.create_catalog_product(
+        ProductCatalogCreateRequest(name="Cola", barcode="478001", category_id=category.id)
+    )
+    store_id = uuid.uuid4()
+    await service.add_product_to_store(
+        store_id=store_id,
+        payload=StoreProductCreateRequest(
+            product_id=product.id,
+            sale_price=Decimal("9000"),
+            stock_quantity=Decimal("2"),
+            low_stock_threshold=Decimal("3"),
+        ),
+    )
+
+    result = await service.list_store_products(
+        store_id=store_id,
+        search=None,
+        barcode="478001",
+        category_id=category.id,
+        low_stock=True,
+        page=1,
+        limit=10,
+    )
+
+    assert result.pagination.total == 1
+    assert result.data[0].product.name == "Cola"
 
 
 @pytest.mark.asyncio

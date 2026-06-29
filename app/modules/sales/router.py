@@ -5,9 +5,17 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.core.deps import ActiveStoreId, CsrfGuard, DbSession, WriteAccess, get_auth_context
+from app.core.deps import (
+    ActiveStoreId,
+    CsrfGuard,
+    DbSession,
+    WriteAccess,
+    get_auth_context,
+    require_roles,
+)
+from app.core.enums import UserRole
 from app.core.responses import ApiListResponse, ApiResponse
-from app.modules.sales.schemas import SaleCheckoutRequest, SaleResponse
+from app.modules.sales.schemas import SaleCancelRequest, SaleCheckoutRequest, SaleResponse
 from app.modules.sales.service import SalesService
 
 router = APIRouter(
@@ -27,6 +35,7 @@ async def checkout(
     store_id: ActiveStoreId,
     _: CsrfGuard,
     __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)),
 ) -> ApiResponse[SaleResponse]:
     sale = await SalesService(db).checkout(store_id=store_id, payload=payload)
     return ApiResponse(data=SaleResponse.model_validate(sale), message="Sotuv yakunlandi.")
@@ -54,3 +63,17 @@ async def get_sale(
 ) -> ApiResponse[SaleResponse]:
     sale = await SalesService(db).get_sale(store_id=store_id, sale_id=sale_id)
     return ApiResponse(data=SaleResponse.model_validate(sale))
+
+
+@router.post("/{sale_id}/cancel", response_model=ApiResponse[SaleResponse])
+async def cancel_sale(
+    sale_id: uuid.UUID,
+    payload: SaleCancelRequest,
+    db: DbSession,
+    store_id: ActiveStoreId,
+    _: CsrfGuard,
+    __: WriteAccess,
+    ___: None = Depends(require_roles(UserRole.OWNER, UserRole.MANAGER)),
+) -> ApiResponse[SaleResponse]:
+    sale = await SalesService(db).cancel_sale(store_id=store_id, sale_id=sale_id, payload=payload)
+    return ApiResponse(data=SaleResponse.model_validate(sale), message="Sotuv bekor qilindi.")

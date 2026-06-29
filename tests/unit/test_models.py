@@ -1,6 +1,7 @@
 from sqlalchemy.orm import configure_mappers
 
-from app.models import Category, Product, Sale, Store, StoreProduct
+from app.core.enums import UserRole
+from app.models import Category, Product, Sale, SaleItem, Store, StoreProduct
 
 
 def test_model_relationships_configure() -> None:
@@ -60,3 +61,11 @@ def test_sales_idempotency_key_is_unique_per_store() -> None:
     }
 
     assert unique_columns["uq_sales_store_idempotency_key"] == ("store_id", "idempotency_key")
+
+
+def test_sale_items_keep_purchase_price_snapshot() -> None:
+    assert "purchase_price_snapshot" in SaleItem.__table__.columns
+
+
+def test_accountant_role_is_supported() -> None:
+    assert UserRole.ACCOUNTANT.value == "accountant"

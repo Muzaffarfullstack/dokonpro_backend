@@ -197,6 +197,9 @@ class ProductsRepository:
         *,
         store_id: uuid.UUID,
         search: str | None,
+        barcode: str | None,
+        category_id: uuid.UUID | None,
+        low_stock: bool | None,
     ) -> Select[tuple[StoreProduct]]:
         query = (
             select(StoreProduct)
@@ -213,6 +216,12 @@ class ProductsRepository:
                     StoreProduct.local_sku.ilike(pattern),
                 )
             )
+        if barcode:
+            query = query.where(Product.barcode == barcode)
+        if category_id:
+            query = query.where(Product.category_id == category_id)
+        if low_stock is True:
+            query = query.where(StoreProduct.stock_quantity <= StoreProduct.low_stock_threshold)
         return query
 
     async def list_store_products(
@@ -222,8 +231,17 @@ class ProductsRepository:
         search: str | None,
         page: int,
         limit: int,
+        barcode: str | None,
+        category_id: uuid.UUID | None,
+        low_stock: bool | None,
     ) -> tuple[Sequence[StoreProduct], int]:
-        query = self._store_products_query(store_id=store_id, search=search)
+        query = self._store_products_query(
+            store_id=store_id,
+            search=search,
+            barcode=barcode,
+            category_id=category_id,
+            low_stock=low_stock,
+        )
         total = await self.count(query)
         result = await self.db.execute(
             query.order_by(Product.name.asc()).offset((page - 1) * limit).limit(limit)
