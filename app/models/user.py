@@ -10,6 +10,7 @@ from app.core.enums import UserRole, sql_values
 
 if TYPE_CHECKING:
     from app.models.store import Store
+    from app.models.store_staff import StoreStaff
 
 
 class User(BaseEntity, ActiveMixin):
@@ -28,6 +29,11 @@ class User(BaseEntity, ActiveMixin):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     stores: Mapped[list[Store]] = relationship("Store", back_populates="owner")
+    staff_memberships: Mapped[list[StoreStaff]] = relationship(
+        "StoreStaff",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
 
 __all__ = ["User"]

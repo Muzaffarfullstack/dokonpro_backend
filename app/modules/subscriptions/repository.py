@@ -20,8 +20,6 @@ class SubscriptionsRepository:
 
     async def get_subscription_for_update(self, *, store_id: uuid.UUID) -> Subscription | None:
         result = await self.db.execute(
-            select(Subscription)
-            .where(Subscription.store_id == store_id)
-            .with_for_update()
+            select(Subscription).where(Subscription.store_id == store_id).with_for_update()
         )
         return result.scalar_one_or_none()

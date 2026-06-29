@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Select, func, select
@@ -259,21 +260,48 @@ class SalesRepository:
         )
         return result.scalar_one_or_none()
 
-    def _sales_query(self, *, store_id: uuid.UUID) -> Select[tuple[Sale]]:
-        return (
+    def _sales_query(
+        self,
+        *,
+        store_id: uuid.UUID,
+        date_from: datetime | None,
+        date_to: datetime | None,
+        status: str | None,
+        payment_status: str | None,
+    ) -> Select[tuple[Sale]]:
+        query = (
             select(Sale)
             .options(selectinload(Sale.items), selectinload(Sale.payments))
             .where(Sale.store_id == store_id)
         )
+        if date_from is not None:
+            query = query.where(Sale.sold_at >= date_from)
+        if date_to is not None:
+            query = query.where(Sale.sold_at <= date_to)
+        if status is not None:
+            query = query.where(Sale.status == status)
+        if payment_status is not None:
+            query = query.where(Sale.payment_status == payment_status)
+        return query
 
     async def list_sales(
         self,
         *,
         store_id: uuid.UUID,
+        date_from: datetime | None,
+        date_to: datetime | None,
+        status: str | None,
+        payment_status: str | None,
         page: int,
         limit: int,
     ) -> tuple[Sequence[Sale], int]:
-        query = self._sales_query(store_id=store_id)
+        query = self._sales_query(
+            store_id=store_id,
+            date_from=date_from,
+            date_to=date_to,
+            status=status,
+            payment_status=payment_status,
+        )
         total = await self.count(query)
         result = await self.db.execute(
             query.order_by(Sale.sold_at.desc()).offset((page - 1) * limit).limit(limit)

@@ -198,9 +198,6 @@ async def list_transactions(
         limit=limit,
     )
     return ApiListResponse(
-        data=[
-            DebtTransactionResponse.model_validate(transaction)
-            for transaction in result.data
-        ],
+        data=[DebtTransactionResponse.model_validate(transaction) for transaction in result.data],
         pagination=result.pagination,
     )

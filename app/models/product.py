@@ -22,6 +22,7 @@ from app.core.database import ActiveMixin, BaseEntity, StoreScopedEntity
 
 if TYPE_CHECKING:
     from app.models.category import Category
+    from app.models.purchase import PurchaseItem
     from app.models.sale import SaleItem
     from app.models.stock_movement import StockMovement
     from app.models.store import Store
@@ -97,6 +98,10 @@ class StoreProduct(StoreScopedEntity, ActiveMixin):
     store: Mapped[Store] = relationship("Store", back_populates="store_products")
     product: Mapped[Product] = relationship("Product", back_populates="store_products")
     sale_items: Mapped[list[SaleItem]] = relationship("SaleItem", back_populates="store_product")
+    purchase_items: Mapped[list[PurchaseItem]] = relationship(
+        "PurchaseItem",
+        back_populates="store_product",
+    )
     stock_movements: Mapped[list[StockMovement]] = relationship(
         "StockMovement",
         back_populates="store_product",

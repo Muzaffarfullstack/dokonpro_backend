@@ -6,16 +6,20 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import DEFAULT_MAX_PRODUCTS, DEFAULT_MAX_USERS, TRIAL_DAYS
-from app.core.enums import SubscriptionPlan, SubscriptionStatus
+from app.core.enums import SubscriptionPlan, SubscriptionStatus, UserRole
 from app.core.exceptions import AppException
+from app.core.security import hash_password
 from app.models import Store
 from app.modules.stores.repository import StoresRepository
 from app.modules.stores.schemas import (
     StoreCreateRequest,
     StoreResponse,
+    StoreStaffCreateRequest,
+    StoreStaffResponse,
     StoreSubscriptionSummary,
     StoreUpdateRequest,
 )
+from app.utils.phone import normalize_phone
 from app.utils.slug import slugify
 from app.utils.subscription import subscription_allows_write, subscription_status
 
@@ -129,6 +133,90 @@ class StoresService:
         store.is_active = False
         await self.db.commit()
 
+    async def list_staff(
+        self, *, owner_id: uuid.UUID, store_id: uuid.UUID
+    ) -> list[StoreStaffResponse]:
+        await self._get_store(owner_id=owner_id, store_id=store_id)
+        staff_members = await self.repo.list_staff(store_id=store_id)
+        return [self._staff_response(staff) for staff in staff_members]
+
+    async def add_staff(
+        self,
+        *,
+        owner_id: uuid.UUID,
+        store_id: uuid.UUID,
+        payload: StoreStaffCreateRequest,
+    ) -> StoreStaffResponse:
+        store = await self._get_store(owner_id=owner_id, store_id=store_id)
+        if payload.role == UserRole.OWNER:
+            raise AppException(
+                code="INVALID_STAFF_ROLE",
+                message="Owner rolini staff sifatida qo'shib bo'lmaydi.",
+                status_code=400,
+                field="role",
+            )
+
+        phone = normalize_phone(payload.phone)
+        user = await self.repo.get_user_by_phone(phone)
+        if user is None:
+            user = await self.repo.create_user(
+                full_name=payload.full_name,
+                phone=phone,
+                password_hash=hash_password(payload.password),
+                role=payload.role.value,
+            )
+        else:
+            if user.id == store.owner_id:
+                raise AppException(
+                    code="OWNER_ALREADY_HAS_STORE",
+                    message="Do'kon egasini staff sifatida qo'shib bo'lmaydi.",
+                    status_code=409,
+                    field="phone",
+                )
+            user.full_name = payload.full_name
+            user.role = payload.role.value
+
+        existing_staff = await self.repo.get_staff(store_id=store_id, user_id=user.id)
+        if existing_staff is not None:
+            if existing_staff.is_active:
+                raise AppException(
+                    code="STAFF_ALREADY_EXISTS",
+                    message="Bu foydalanuvchi allaqachon staff ro'yxatida.",
+                    status_code=409,
+                    field="phone",
+                )
+            existing_staff.is_active = True
+            existing_staff.role = payload.role.value
+            await self.db.commit()
+            await self.db.refresh(existing_staff, attribute_names=["user"])
+            return self._staff_response(existing_staff)
+
+        staff = await self.repo.create_staff(
+            store_id=store_id,
+            user_id=user.id,
+            role=payload.role.value,
+        )
+        await self.db.commit()
+        return self._staff_response(staff)
+
+    async def remove_staff(
+        self,
+        *,
+        owner_id: uuid.UUID,
+        store_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> None:
+        await self._get_store(owner_id=owner_id, store_id=store_id)
+        staff = await self.repo.get_staff(store_id=store_id, user_id=user_id)
+        if staff is None or not staff.is_active:
+            raise AppException(
+                code="STAFF_NOT_FOUND",
+                message="Staff foydalanuvchi topilmadi.",
+                status_code=404,
+            )
+        staff.is_active = False
+        await self.db.commit()
+
     async def _get_store(self, *, owner_id: uuid.UUID, store_id: uuid.UUID) -> Store:
         store = await self.repo.get_store(owner_id=owner_id, store_id=store_id)
         if store is None:
@@ -157,4 +245,15 @@ class StoresService:
             timezone=store.timezone,
             is_active=store.is_active,
             subscription=subscription_response,
+        )
+
+    def _staff_response(self, staff: object) -> StoreStaffResponse:
+        return StoreStaffResponse(
+            id=staff.id,
+            store_id=staff.store_id,
+            user_id=staff.user_id,
+            full_name=staff.user.full_name,
+            phone=staff.user.phone,
+            role=staff.role,
+            is_active=staff.is_active,
         )

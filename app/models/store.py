@@ -12,9 +12,13 @@ from app.core.database import ActiveMixin, BaseEntity
 
 if TYPE_CHECKING:
     from app.models.debt import Debtor
+    from app.models.expense import Expense, ExpenseCategory
     from app.models.product import StoreProduct
+    from app.models.purchase import Purchase
     from app.models.sale import Sale
+    from app.models.store_staff import StoreStaff
     from app.models.subscription import Subscription
+    from app.models.supplier import Supplier
     from app.models.user import User
 
 
@@ -51,6 +55,31 @@ class Store(BaseEntity, ActiveMixin):
     )
     debtors: Mapped[list[Debtor]] = relationship(
         "Debtor",
+        back_populates="store",
+        cascade="all, delete-orphan",
+    )
+    suppliers: Mapped[list[Supplier]] = relationship(
+        "Supplier",
+        back_populates="store",
+        cascade="all, delete-orphan",
+    )
+    purchases: Mapped[list[Purchase]] = relationship(
+        "Purchase",
+        back_populates="store",
+        cascade="all, delete-orphan",
+    )
+    expense_categories: Mapped[list[ExpenseCategory]] = relationship(
+        "ExpenseCategory",
+        back_populates="store",
+        cascade="all, delete-orphan",
+    )
+    expenses: Mapped[list[Expense]] = relationship(
+        "Expense",
+        back_populates="store",
+        cascade="all, delete-orphan",
+    )
+    staff_members: Mapped[list[StoreStaff]] = relationship(
+        "StoreStaff",
         back_populates="store",
         cascade="all, delete-orphan",
     )

@@ -3,13 +3,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.constants import DEFAULT_MAX_PRODUCTS, DEFAULT_MAX_USERS
 from app.core.enums import SubscriptionPlan, SubscriptionStatus, UserRole
-from app.models import Store, Subscription, User
+from app.models import Store, StoreStaff, Subscription, User
 
 
 class AuthRepository:
@@ -83,7 +83,18 @@ class AuthRepository:
         result = await self.db.execute(
             select(Store)
             .options(selectinload(Store.subscription))
-            .where(Store.owner_id == user_id, Store.is_active.is_(True))
+            .outerjoin(
+                StoreStaff,
+                and_(
+                    StoreStaff.store_id == Store.id,
+                    StoreStaff.user_id == user_id,
+                    StoreStaff.is_active.is_(True),
+                ),
+            )
+            .where(
+                Store.is_active.is_(True),
+                or_(Store.owner_id == user_id, StoreStaff.user_id == user_id),
+            )
             .order_by(Store.created_at.asc())
         )
         return list(result.scalars().all())
@@ -92,6 +103,18 @@ class AuthRepository:
         result = await self.db.execute(
             select(Store)
             .options(selectinload(Store.subscription))
-            .where(Store.id == store_id, Store.owner_id == user_id, Store.is_active.is_(True))
+            .outerjoin(
+                StoreStaff,
+                and_(
+                    StoreStaff.store_id == Store.id,
+                    StoreStaff.user_id == user_id,
+                    StoreStaff.is_active.is_(True),
+                ),
+            )
+            .where(
+                Store.id == store_id,
+                Store.is_active.is_(True),
+                or_(Store.owner_id == user_id, StoreStaff.user_id == user_id),
+            )
         )
         return result.scalar_one_or_none()

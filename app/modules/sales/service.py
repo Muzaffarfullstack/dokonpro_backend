@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -248,10 +249,22 @@ class SalesService:
         self,
         *,
         store_id: uuid.UUID,
+        date_from: datetime | None,
+        date_to: datetime | None,
+        status: SaleStatus | None,
+        payment_status: SalePaymentStatus | None,
         page: int,
         limit: int,
     ) -> ApiListResponse[Sale]:
-        sales, total = await self.repo.list_sales(store_id=store_id, page=page, limit=limit)
+        sales, total = await self.repo.list_sales(
+            store_id=store_id,
+            date_from=date_from,
+            date_to=date_to,
+            status=status.value if status else None,
+            payment_status=payment_status.value if payment_status else None,
+            page=page,
+            limit=limit,
+        )
         return ApiListResponse(
             data=list(sales),
             pagination=build_pagination(page=page, limit=limit, total=total),

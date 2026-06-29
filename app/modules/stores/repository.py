@@ -8,7 +8,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Store, Subscription
+from app.models import Store, StoreStaff, Subscription, User
 
 
 class StoresRepository:
@@ -97,3 +97,61 @@ class StoresRepository:
         self.db.add(subscription)
         await self.db.flush()
         return subscription
+
+    async def get_user_by_phone(self, phone: str) -> User | None:
+        result = await self.db.execute(select(User).where(User.phone == phone))
+        return result.scalar_one_or_none()
+
+    async def create_user(
+        self,
+        *,
+        full_name: str,
+        phone: str,
+        password_hash: str,
+        role: str,
+    ) -> User:
+        user = User(
+            full_name=full_name,
+            phone=phone,
+            password_hash=password_hash,
+            role=role,
+            is_verified=True,
+        )
+        self.db.add(user)
+        await self.db.flush()
+        return user
+
+    async def get_staff(
+        self,
+        *,
+        store_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> StoreStaff | None:
+        result = await self.db.execute(
+            select(StoreStaff)
+            .options(selectinload(StoreStaff.user))
+            .where(StoreStaff.store_id == store_id, StoreStaff.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def create_staff(
+        self,
+        *,
+        store_id: uuid.UUID,
+        user_id: uuid.UUID,
+        role: str,
+    ) -> StoreStaff:
+        staff = StoreStaff(store_id=store_id, user_id=user_id, role=role)
+        self.db.add(staff)
+        await self.db.flush()
+        await self.db.refresh(staff, attribute_names=["user"])
+        return staff
+
+    async def list_staff(self, *, store_id: uuid.UUID) -> Sequence[StoreStaff]:
+        result = await self.db.execute(
+            select(StoreStaff)
+            .options(selectinload(StoreStaff.user))
+            .where(StoreStaff.store_id == store_id, StoreStaff.is_active.is_(True))
+            .order_by(StoreStaff.created_at.asc())
+        )
+        return result.scalars().all()

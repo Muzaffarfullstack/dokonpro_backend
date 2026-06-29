@@ -153,9 +153,7 @@ def make_store(*, name: str = "Asaka Savdo Markazi", expired: bool = False) -> S
         is_active=True,
     )
     trial_ends_at = (
-        datetime.now(UTC) - timedelta(days=1)
-        if expired
-        else datetime.now(UTC) + timedelta(days=7)
+        datetime.now(UTC) - timedelta(days=1) if expired else datetime.now(UTC) + timedelta(days=7)
     )
     store.subscription = Subscription(
         id=uuid.uuid4(),
@@ -215,9 +213,7 @@ async def test_register_creates_user_store_and_seven_day_trial() -> None:
 
     assert db.committed is True
     assert session.response.user.phone == "+998901234567"
-    assert FakeOtpService.consumed_codes == [
-        ("+998901234567", OtpPurpose.REGISTER, "123456")
-    ]
+    assert FakeOtpService.consumed_codes == [("+998901234567", OtpPurpose.REGISTER, "123456")]
     assert session.response.active_store is not None
     assert session.response.active_store.read_only is False
     assert session.response.active_store.subscription_status == SubscriptionStatus.TRIALING.value
@@ -295,9 +291,7 @@ async def test_login_rejects_bad_password() -> None:
     FakeAuthRepository.user = make_user()
 
     with pytest.raises(AppException) as exc:
-        await AuthService(FakeDb()).login(
-            LoginRequest(phone="+998901234567", password="wrongpass")
-        )
+        await AuthService(FakeDb()).login(LoginRequest(phone="+998901234567", password="wrongpass"))
 
     assert exc.value.code == "INVALID_CREDENTIALS"
     assert exc.value.status_code == 401
@@ -308,9 +302,7 @@ async def test_login_rejects_inactive_user() -> None:
     FakeAuthRepository.user = make_user(active=False)
 
     with pytest.raises(AppException) as exc:
-        await AuthService(FakeDb()).login(
-            LoginRequest(phone="+998901234567", password="secret123")
-        )
+        await AuthService(FakeDb()).login(LoginRequest(phone="+998901234567", password="secret123"))
 
     assert exc.value.code == "USER_INACTIVE"
     assert exc.value.status_code == 403

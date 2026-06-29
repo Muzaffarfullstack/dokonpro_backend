@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -13,7 +14,7 @@ from app.core.deps import (
     get_auth_context,
     require_roles,
 )
-from app.core.enums import UserRole
+from app.core.enums import SalePaymentStatus, SaleStatus, UserRole
 from app.core.responses import ApiListResponse, ApiResponse
 from app.modules.sales.schemas import SaleCancelRequest, SaleCheckoutRequest, SaleResponse
 from app.modules.sales.service import SalesService
@@ -26,6 +27,7 @@ router = APIRouter(
 
 PageQuery = Annotated[int, Query(ge=1)]
 LimitQuery = Annotated[int, Query(ge=1, le=100)]
+SaleStatusQuery = Annotated[SaleStatus | None, Query(alias="status")]
 
 
 @router.post("", response_model=ApiResponse[SaleResponse], status_code=status.HTTP_201_CREATED)
@@ -45,10 +47,22 @@ async def checkout(
 async def list_sales(
     db: DbSession,
     store_id: ActiveStoreId,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    status_filter: SaleStatusQuery = None,
+    payment_status: SalePaymentStatus | None = None,
     page: PageQuery = 1,
     limit: LimitQuery = 20,
 ) -> ApiListResponse[SaleResponse]:
-    result = await SalesService(db).list_sales(store_id=store_id, page=page, limit=limit)
+    result = await SalesService(db).list_sales(
+        store_id=store_id,
+        date_from=date_from,
+        date_to=date_to,
+        status=status_filter,
+        payment_status=payment_status,
+        page=page,
+        limit=limit,
+    )
     return ApiListResponse(
         data=[SaleResponse.model_validate(sale) for sale in result.data],
         pagination=result.pagination,

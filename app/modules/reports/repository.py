@@ -8,7 +8,7 @@ from sqlalchemy import Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import SaleStatus
-from app.models import Debtor, Sale, SaleItem, StoreProduct
+from app.models import Debtor, Expense, Sale, SaleItem, StoreProduct
 
 
 class ReportsRepository:
@@ -46,11 +46,13 @@ class ReportsRepository:
                 func.coalesce(func.sum(Sale.discount_total), 0),
                 func.coalesce(func.sum(Sale.total_amount), 0),
                 func.coalesce(func.sum(Sale.paid_amount), 0),
-            ).where(*self._completed_sales_filter(
-                store_id=store_id,
-                date_from=date_from,
-                date_to=date_to,
-            ))
+            ).where(
+                *self._completed_sales_filter(
+                    store_id=store_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+            )
         )
         count, gross, discount, net, paid = result.one()
         return int(count), Decimal(gross), Decimal(discount), Decimal(net), Decimal(paid)
@@ -61,22 +63,33 @@ class ReportsRepository:
         store_id: uuid.UUID,
         date_from: datetime | None,
         date_to: datetime | None,
-    ) -> tuple[Decimal, Decimal]:
+    ) -> tuple[Decimal, Decimal, Decimal]:
         query: Select[tuple[Decimal, Decimal]] = (
             select(
                 func.coalesce(func.sum(SaleItem.total_amount), 0),
                 func.coalesce(func.sum(SaleItem.purchase_price_snapshot * SaleItem.quantity), 0),
             )
             .join(Sale, Sale.id == SaleItem.sale_id)
-            .where(*self._completed_sales_filter(
-                store_id=store_id,
-                date_from=date_from,
-                date_to=date_to,
-            ))
+            .where(
+                *self._completed_sales_filter(
+                    store_id=store_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+            )
         )
         result = await self.db.execute(query)
         revenue, cogs = result.one()
-        return Decimal(revenue), Decimal(cogs)
+        expense_filters: list[object] = [Expense.store_id == store_id]
+        if date_from is not None:
+            expense_filters.append(Expense.spent_at >= date_from)
+        if date_to is not None:
+            expense_filters.append(Expense.spent_at <= date_to)
+        expense_result = await self.db.execute(
+            select(func.coalesce(func.sum(Expense.amount), 0)).where(*expense_filters)
+        )
+        expenses = expense_result.scalar_one()
+        return Decimal(revenue), Decimal(cogs), Decimal(expenses)
 
     async def stock_report(self, *, store_id: uuid.UUID) -> tuple[int, int, Decimal, Decimal]:
         result = await self.db.execute(
@@ -86,8 +99,8 @@ class ReportsRepository:
                     func.sum(
                         case(
                             (
-                                StoreProduct.stock_quantity
-                                <= StoreProduct.low_stock_threshold,
+                                (StoreProduct.low_stock_threshold > 0)
+                                & (StoreProduct.stock_quantity <= StoreProduct.low_stock_threshold),
                                 1,
                             ),
                             else_=0,

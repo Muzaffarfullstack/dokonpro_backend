@@ -221,7 +221,10 @@ class ProductsRepository:
         if category_id:
             query = query.where(Product.category_id == category_id)
         if low_stock is True:
-            query = query.where(StoreProduct.stock_quantity <= StoreProduct.low_stock_threshold)
+            query = query.where(
+                StoreProduct.low_stock_threshold > 0,
+                StoreProduct.stock_quantity <= StoreProduct.low_stock_threshold,
+            )
         return query
 
     async def list_store_products(

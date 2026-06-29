@@ -279,6 +279,10 @@ class FakeSalesRepository:
         self,
         *,
         store_id: uuid.UUID,
+        date_from: object,
+        date_to: object,
+        status: str | None,
+        payment_status: str | None,
         page: int,
         limit: int,
     ) -> tuple[list[Sale], int]:
@@ -287,6 +291,10 @@ class FakeSalesRepository:
             for (current_store_id, _), sale in type(self).sales.items()
             if current_store_id == store_id
         ]
+        if status is not None:
+            sales = [sale for sale in sales if sale.status == status]
+        if payment_status is not None:
+            sales = [sale for sale in sales if sale.payment_status == payment_status]
         return sales[(page - 1) * limit : page * limit], len(sales)
 
 
@@ -599,7 +607,15 @@ async def test_list_and_get_sales() -> None:
     )
 
     found = await service.get_sale(store_id=store_id, sale_id=sale.id)
-    result = await service.list_sales(store_id=store_id, page=1, limit=10)
+    result = await service.list_sales(
+        store_id=store_id,
+        date_from=None,
+        date_to=None,
+        status=None,
+        payment_status=None,
+        page=1,
+        limit=10,
+    )
 
     assert found.id == sale.id
     assert result.pagination.total == 1

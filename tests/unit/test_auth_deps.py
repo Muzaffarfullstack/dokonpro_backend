@@ -180,9 +180,7 @@ def make_store(*, expired: bool) -> Store:
         is_active=True,
     )
     trial_ends_at = (
-        datetime.now(UTC) - timedelta(days=1)
-        if expired
-        else datetime.now(UTC) + timedelta(days=1)
+        datetime.now(UTC) - timedelta(days=1) if expired else datetime.now(UTC) + timedelta(days=1)
     )
     store.subscription = Subscription(
         id=uuid.uuid4(),

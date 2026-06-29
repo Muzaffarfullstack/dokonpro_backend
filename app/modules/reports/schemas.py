@@ -17,6 +17,8 @@ class ProfitReportResponse(BaseModel):
     revenue: Decimal
     cogs: Decimal
     gross_profit: Decimal
+    expenses: Decimal
+    net_profit: Decimal
 
 
 class StockReportResponse(BaseModel):

@@ -24,9 +24,8 @@ def subscription_status(subscription: Subscription | None) -> str:
     if subscription is None:
         return DerivedSubscriptionStatus.MISSING.value
 
-    if (
-        subscription.status == SubscriptionStatus.TRIALING.value
-        and not subscription_allows_write(subscription)
+    if subscription.status == SubscriptionStatus.TRIALING.value and not subscription_allows_write(
+        subscription
     ):
         return SubscriptionStatus.EXPIRED.value
 

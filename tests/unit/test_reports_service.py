@@ -19,8 +19,8 @@ class FakeReportsRepository:
             Decimal("25000"),
         )
 
-    async def profit_report(self, **_: object) -> tuple[Decimal, Decimal]:
-        return Decimal("27000"), Decimal("18000")
+    async def profit_report(self, **_: object) -> tuple[Decimal, Decimal, Decimal]:
+        return Decimal("27000"), Decimal("18000"), Decimal("2000")
 
     async def stock_report(self, **_: object) -> tuple[int, int, Decimal, Decimal]:
         return 5, 2, Decimal("50000"), Decimal("75000")
@@ -46,5 +46,6 @@ async def test_reports_summary_combines_sections() -> None:
 
     assert result.sales.net_sales == Decimal("27000")
     assert result.profit.gross_profit == Decimal("9000")
+    assert result.profit.net_profit == Decimal("7000")
     assert result.stock.low_stock_count == 2
     assert result.debts.total_balance == Decimal("12000")

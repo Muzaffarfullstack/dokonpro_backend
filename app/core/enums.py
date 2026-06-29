@@ -58,6 +58,11 @@ class PaymentStatus(StrEnum):
     REFUNDED = "refunded"
 
 
+class PurchaseStatus(StrEnum):
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
 class DebtTransactionType(StrEnum):
     BORROW = "borrow"
     REPAYMENT = "repayment"

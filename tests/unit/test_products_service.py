@@ -216,9 +216,7 @@ class FakeProductsRepository:
         ]
         if search:
             products = [
-                product
-                for product in products
-                if search.lower() in product.product.name.lower()
+                product for product in products if search.lower() in product.product.name.lower()
             ]
         if barcode:
             products = [product for product in products if product.product.barcode == barcode]

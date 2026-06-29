@@ -100,8 +100,7 @@ async def test_verify_code_returns_one_time_verification_token(otp_service) -> N
     assert verify_result.phone == "+15551112233"
     assert verify_result.verification_token
     verified_key = (
-        f"otp:{OtpPurpose.REGISTER.value}:+15551112233:"
-        f"verified:{verify_result.verification_token}"
+        f"otp:{OtpPurpose.REGISTER.value}:+15551112233:verified:{verify_result.verification_token}"
     )
     assert verified_key in redis.data
 

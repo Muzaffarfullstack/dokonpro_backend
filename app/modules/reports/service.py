@@ -46,15 +46,18 @@ class ReportsService:
         date_from: datetime | None,
         date_to: datetime | None,
     ) -> ProfitReportResponse:
-        revenue, cogs = await self.repo.profit_report(
+        revenue, cogs, expenses = await self.repo.profit_report(
             store_id=store_id,
             date_from=date_from,
             date_to=date_to,
         )
+        gross_profit = revenue - cogs
         return ProfitReportResponse(
             revenue=revenue,
             cogs=cogs,
-            gross_profit=revenue - cogs,
+            gross_profit=gross_profit,
+            expenses=expenses,
+            net_profit=gross_profit - expenses,
         )
 
     async def stock(self, *, store_id: uuid.UUID) -> StockReportResponse:

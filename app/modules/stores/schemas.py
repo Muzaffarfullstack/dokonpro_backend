@@ -5,6 +5,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.enums import UserRole
+
 
 class StoreCreateRequest(BaseModel):
     name: str = Field(min_length=2, max_length=120)
@@ -53,3 +55,25 @@ class StoreResponse(BaseModel):
     timezone: str
     is_active: bool
     subscription: StoreSubscriptionSummary | None = None
+
+
+class StoreStaffCreateRequest(BaseModel):
+    full_name: str = Field(min_length=2, max_length=120)
+    phone: str = Field(min_length=8, max_length=32)
+    password: str = Field(min_length=8, max_length=128)
+    role: UserRole
+
+    @field_validator("full_name", "phone", "password")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class StoreStaffResponse(BaseModel):
+    id: uuid.UUID
+    store_id: uuid.UUID
+    user_id: uuid.UUID
+    full_name: str
+    phone: str
+    role: UserRole
+    is_active: bool
